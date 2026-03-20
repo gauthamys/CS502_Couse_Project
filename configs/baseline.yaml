@@ -1,0 +1,35 @@
+experiment: baseline_ecfp_xgb
+
+data:
+  del_screen_path: data/raw/wdr91_del_screen.csv
+  validation_library_path: data/raw/validation_library.csv
+  smiles_col: smiles
+  label_col: is_hit
+  enrichment_count_col: count
+  enrichment_ctrl_col: count_ctrl
+
+features:
+  type: ecfp
+  radius: 2
+  n_bits: 2048
+
+model:
+  type: xgboost
+  n_estimators: 1000
+  learning_rate: 0.05
+  max_depth: 6
+  subsample: 0.8
+  colsample_bytree: 0.8
+
+training:
+  test_fraction: 0.2
+  random_seed: 42
+  cv_folds: 5
+
+evaluation:
+  ef_fractions: [0.01, 0.05, 0.10]
+  top_k_hit_rate: [100, 500, 1000]
+
+output:
+  predictions_path: outputs/predictions/validation_scores.csv
+  checkpoint_name: xgb_ecfp_baseline

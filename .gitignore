@@ -1,0 +1,32 @@
+# Data
+data/raw/
+data/processed/
+data/external/
+*.parquet
+*.csv
+*.pkl
+*.h5
+
+# Outputs
+outputs/predictions/
+outputs/checkpoints/
+
+# Keep figures and directory stubs
+!outputs/figures/
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/external/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
