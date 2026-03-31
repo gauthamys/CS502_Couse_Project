@@ -1,0 +1,69 @@
+\documentclass[11pt, letterpaper]{article}
+\usepackage[margin=1in, top=0.9in, bottom=0.9in]{geometry}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{titlesec}
+\usepackage{array}
+
+\setlength{\parskip}{6pt}
+\setlength{\parindent}{0pt}
+\titlespacing*{\section}{0pt}{10pt}{4pt}
+\titleformat{\section}{\normalsize\bfseries}{\thesection}{0.5em}{}
+\pagestyle{empty}
+
+\begin{document}
+
+{\centering
+\textbf{\large Progress Report}\\[8pt]
+\textbf{Predicting Active Binders for WDR91 Using Molecular Fingerprints and Graph Neural Networks}\\[6pt]
+Dheeraj Malle Rudrappa\ \ (\texttt{dmall6@uic.edu})\\[3pt]
+Gautham Satyanarayana\ \ (\texttt{gsaty@uic.edu})\\[8pt]
+}
+
+\section*{Proposal Updates}
+
+There has been no modification to the initial proposal. For Step~2 of the challenge we will use GNNs to model SMILES data because fixed-length fingerprints (e.g., ECFP, MACCS) compress molecular topology into flat bit vectors, losing substructure arrangement and long-range atom interactions. GNNs learn atom-level embeddings via message passing over molecular graphs, preserving full structural context and learning task-specific motifs end-to-end --- which is essential for WDR91's WD40-repeat binding pocket.
+
+\section*{Progress}
+
+We completed the full Step~1 fingerprint-based pipeline. We loaded and explored the WDR91 training set (375K compounds; 28,778 actives vs.\ 346,817 inactives; 12:1 imbalance) and verified all nine fingerprint columns plus MW and ALogP. We built sparse feature matrices in two modes: \emph{baseline} (ECFP4, 2,048 bits) and \emph{enhanced} (all 9 fingerprints, 16,551 bits, 87.8\% sparsity). We trained LightGBM and Logistic Regression on both feature sets using stratified 80/20 splits. Additionally, we trained an XGBoost classifier on a concatenated ECFP6+MACCS+RDK vector (4,263 bits) with \texttt{scale\_pos\_weight} to handle the class imbalance. All results below are on the held-out 20\% test set:
+
+\vspace{6pt}
+\begin{center}
+\small
+\begin{tabular}{llccccc}
+\toprule
+\textbf{Features} & \textbf{Model} & \textbf{ROC-AUC} & \textbf{PR-AUC} & \textbf{Bal.\ Acc.} & \textbf{Recall} & \textbf{EF@1\%} \\
+\midrule
+ECFP4 only      & LightGBM & 0.9714 & 0.8218 & 0.9128 & 0.9010 & -- \\
+ECFP4 only      & LogReg   & 0.9353 & 0.6581 & 0.7239 & 0.4620 & -- \\
+All 9 FPs       & LightGBM & 0.9786 & 0.8630 & 0.9265 & 0.9121 & -- \\
+All 9 FPs       & LogReg   & 0.9723 & 0.8294 & 0.8502 & 0.7163 & -- \\
+ECFP6+MACCS+RDK & LightGBM & 0.7326 & 0.2440 & 0.6631 & 0.6539 & 7.84 \\
+ECFP6+MACCS+RDK & XGBoost  & 0.7403 & 0.2565 & 0.6700 & 0.6466 & \textbf{7.98} \\
+\bottomrule
+\end{tabular}
+\end{center}
+\vspace{6pt}
+
+We trained a final LightGBM on the full dataset and scored the Step~1 test set (339K compounds). We also implemented diversity-aware post-processing using RDKit's MaxMinPicker to select chemically diverse representatives from the top candidates via Tanimoto distance.
+
+\section*{Challenges}
+
+\begin{itemize}[leftmargin=1.5em, itemsep=4pt, topsep=2pt]
+    \item \textbf{GNN data dependency:} The Step~1 training data does not include SMILES strings, which are required to construct molecular graphs for GNN training. If we do not gain access to Step~2 of the challenge --- which is expected to provide SMILES for the commercial library --- we will be unable to train a GNN and will rely solely on fingerprint-based models.
+    \item \textbf{Scalability:} GNN training on ${\sim}$375K molecular graphs is computationally expensive. We plan to use PyTorch Geometric with mini-batching on a Colab A100 GPU.
+\end{itemize}
+
+\section*{Plan for Remaining Tasks}
+
+\begin{itemize}[leftmargin=1.5em, itemsep=4pt, topsep=2pt]
+    \item \textbf{Mar 31 -- Apr 10:} Build the GNN pipeline using the Step~2 dataset (SMILES $\rightarrow$ molecular graph $\rightarrow$ PyG \texttt{Data} objects). Train GCN and GAT variants; analyze attention weights to identify binding-relevant substructures.
+    \item \textbf{Apr 10 -- Apr 15:} Implement Butina scaffold clustering, compute Pseudo PR-AUC for all models, and unify diversity post-processing into the evaluation loop.
+    \item \textbf{Apr 15 -- Apr 20:} Tune best GNN hyperparameters. Explore GNN + LightGBM ensembling via stacking or score averaging.
+    \item \textbf{Apr 20 -- Apr 23:} Write final report, produce visualizations, and deliver a fully reproducible notebook.
+    \item \textbf{Apr 24:} Project presentation.
+\end{itemize}
+
+\end{document}

@@ -1,175 +1,150 @@
-# DREAM Target 2035 — Project Overview
+# DREAM Target 2035 — WDR91 Drug Discovery Challenge
 
-## What is this challenge?
+## What are we trying to do?
 
-The **DREAM Target 2035 Challenge** is a drug discovery competition. The goal is to use machine learning to find molecules that can "bind" to a specific protein called **WDR91**.
+We are trying to find **drug-like molecules** that bind to a protein called **WDR91**.
 
-When a molecule binds to a disease-related protein, it can block or change that protein's behaviour — this is the basic idea behind most drugs.
-
----
-
-## The Protein: WDR91
-
-WDR91 is a human protein being studied as part of the **Target 2035** initiative — a global science effort to find chemical tools for every human protein by 2035. We don't need to know the biology deeply; our job is to find molecules that interact with it.
+WDR91 is a human protein with no known drug — part of the *Target 2035* initiative which aims to have chemical tools for every human protein by 2035. Finding molecules that interact with it is the first step toward developing a drug.
 
 ---
 
-## The Technology: DNA-Encoded Libraries (DEL)
+## How the challenge works (2 phases)
 
-Finding drug molecules used to mean testing one compound at a time in a lab — slow and expensive.
+### Phase 1 — Retrospective (can we find known hits?)
 
-**DEL screening** is a smarter approach:
-- Chemists attach tiny DNA "barcodes" to millions of molecules
-- All molecules are mixed together and exposed to the target protein (WDR91)
-- Molecules that stick to the protein get pulled out
-- DNA sequencing reveals which barcodes (= which molecules) were pulled out
-- A high count = molecule stuck to the protein = potential **hit**
+We are given a **DEL screen dataset**: 375,595 molecules that were already chemically tested against WDR91 using a technology called DNA-Encoded Libraries (DEL). We know which ones "hit" (stuck to WDR91) and which didn't.
 
-Think of it like fishing with a million hooks at once, then using DNA to identify which hooks caught something.
+**Task:** Train a machine learning model on this data, then use it to rank a *separate* library of ~370,000 diverse molecules. Hidden inside that library are **145 confirmed hits**. If our model ranks those 145 near the top, we pass Phase 1.
 
-### Our training data (`WDR91.parquet`)
-- **375,595 molecules** from a DEL screen against WDR91
-- Each molecule has a `TARGET_VALUE` — how many times it was "pulled out" during screening
-- `LABEL = 1` → **hit** (TARGET_VALUE ≥ 6, pulled out enough times to be meaningful)
-- `LABEL = 0` → **non-hit** (TARGET_VALUE = 0, never pulled out)
-- **28,778 hits** (7.66%) vs **346,817 non-hits** (92.34%)
+### Phase 2 — Prospective (find new drugs)
+
+Use the validated model to screen a commercial library of **4.4 million compounds** that have never been tested. The top predictions get physically synthesized and tested at the Structural Genomics Consortium (SGC) in Toronto.
+
+**Prize:** $5,000 + opportunity to publish the discovered compounds.
 
 ---
 
-## The Two-Phase Challenge
+## What is a DEL?
 
-### Phase 1 — Retrospective (what we do now)
-Train a model on the DEL data above, then use it to **score a separate validation library** of ~370,000 diverse molecules.
+A **DNA-Encoded Library (DEL)** is a way to screen millions of molecules at once cheaply.
 
-Hidden inside that validation library are **145 confirmed hits** — molecules already verified in a lab to bind WDR91.
+Each molecule is attached to a unique DNA barcode. All molecules are mixed with the target protein. Those that bind stick around; those that don't get washed away. Sequencing the remaining DNA tells us which molecules bound — higher read count = stronger binder.
 
-> **Goal:** Rank the 370k molecules so the 145 true hits appear near the top of the list.
-
-### Phase 2 — Prospective (if Phase 1 succeeds)
-Use the validated model to screen a **4.4 million compound commercial library** and nominate the best candidates for real experimental testing at the Structural Genomics Consortium (SGC) in Toronto.
-
-Winners get a **$5,000 prize** and can publish the experimentally validated discoveries.
+In our dataset:
+- `TARGET_VALUE` = number of times a molecule's barcode was sequenced (higher = more binding)
+- `LABEL = 1` → compound had read count > 0 (hit), `LABEL = 0` → no reads (non-hit)
+- Each molecule is made from 3 **building blocks** (BB1, BB2, BB3) combined together
 
 ---
 
-## What Our Model Actually Does
+## What does the data look like?
 
-We are training a **binary classifier** — given a molecule, predict whether it is a hit or not.
+| Column | What it is |
+|--------|-----------|
+| `COMPOUND_ID` | Unique identifier for each molecule |
+| `LIBRARY_ID` | Which DEL sub-library it comes from (39 libraries total) |
+| `BB1_ID / BB2_ID / BB3_ID` | The 3 building blocks the molecule is made of |
+| `TARGET_VALUE` | Raw binding count from the screen |
+| `LABEL` | 1 = hit, 0 = non-hit |
+| `MW` | Molecular weight (size of molecule) |
+| `ALOGP` | Lipophilicity (how fat-soluble the molecule is) |
+| `ECFP6`, `ECFP4`, etc. | **Fingerprints** — binary encodings of molecular structure |
 
-But more precisely, we care about the **score (probability)** the model assigns, not just the yes/no prediction. We use that score to **rank** all molecules from most likely hit to least likely hit, then look at the very top.
-
-### Input features (what we feed the model)
-Each molecule is represented as a **fingerprint** — a fixed-length binary vector encoding which chemical substructures are present.
-
-Pre-computed fingerprints already in the data:
-
-| Fingerprint | What it captures | Size |
-|---|---|---|
-| ECFP4 / ECFP6 | Circular atom environments (radius 2 or 3) | 2048 bits |
-| FCFP4 / FCFP6 | Same as ECFP but using pharmacophoric features | 2048 bits |
-| MACCS | 166 standard medicinal chemistry keys | 166 bits |
-| RDKit | Topological paths | 2048 bits |
-| AVALON | Avalon substructure keys | 512 bits |
-| ATOMPAIR | Atom-pair distances | 2048 bits |
-| TOPTOR | Topological torsion angles | 2048 bits |
-
-Plus physicochemical properties: **MW** (molecular weight) and **ALogP** (lipophilicity).
+**Key numbers:**
+- 375,595 total compounds
+- 28,778 hits (7.66%) — imbalanced but manageable
+- Fingerprints are stored as lists of "on-bit" indices (sparse format)
 
 ---
 
-## What We Are Trying to Maximise
+## What are fingerprints?
 
-### Primary metric: Enrichment Factor at 1% (EF@1%)
+A fingerprint is a way to represent a molecule as a list of 1s and 0s (a bit vector).
 
-> "If we take the top 1% of our ranked list, how many times more hits do we find than if we picked randomly?"
+Think of it as a checklist: "does this molecule have a benzene ring? a carbonyl group? a nitrogen here?" Each yes/no is one bit. We use 2048-bit vectors.
 
-**Formula:**
+Different fingerprints capture different aspects of a molecule:
+
+| Fingerprint | What it captures | Bits |
+|------------|-----------------|------|
+| ECFP6 | Circular chemical environment (most common, best for activity) | 2048 |
+| ECFP4 | Same but shorter radius | 2048 |
+| FCFP6 | Like ECFP but emphasizes pharmacophore features | 2048 |
+| MACCS | 166 standard structural keys | 167 |
+| RDK | Topological paths | 2048 |
+| AVALON | Commercial, balanced | 512 |
+
+---
+
+## What are we maximising?
+
+### Primary: Enrichment Factor @1% (EF@1%)
+
+> *"How many times better than random are we at finding hits in our top 1% predictions?"*
+
+Formula:
 ```
-EF@1% = (hits in top 1%) / (total hits)
-         ─────────────────────────────────
-              1% of total compounds
+EF@1% = (hits found in top 1% of ranked list) / (expected hits by random chance in 1%)
 ```
 
-**Example:**
-- 370,000 compounds, 145 true hits
-- Random selection of top 1% (3,700 compounds) → expect 1.45 hits on average → EF = 1.0
-- Our model puts 30 hits in top 1% → EF = 30/145 ÷ 0.01 = **20.7×**
-
-A perfect model would get EF@1% ≈ **13.8** (all 145 hits in the top 3,700).
-Random = **1.0**.
-We want to be as far above 1.0 as possible.
+- **EF = 1.0** → no better than random
+- **EF = 10.0** → 10× better than random
+- For the 145-hit validation set: random would find ~1.45 hits in the top 1% (3,700 compounds); EF=10 means finding ~14-15
 
 ### Secondary metrics
 
-| Metric | What it measures |
-|---|---|
-| **AUPRC** | Area Under Precision-Recall Curve — overall ranking quality across all thresholds |
-| **AUROC** | Area Under ROC Curve — overall discrimination ability |
-| **EF@5%** | Same as EF@1% but looking at top 5% — less stringent |
+| Metric | What it means |
+|--------|--------------|
+| **AUPRC** | Area under precision-recall curve — overall ranking quality, good for imbalanced data |
+| **AUROC** | Area under ROC curve — less sensitive to imbalance than accuracy |
+| **EF@5%** | Same as EF@1% but looking at top 5% of ranked list |
 
 ---
 
-## The DEL Structure (Why It Matters for Modelling)
-
-Each molecule in the DEL is built from **3 building blocks** (BB1, BB2, BB3) combined by a chemical reaction. There are:
-- 2,485 unique BB1s
-- 2,319 unique BB2s
-- 3,562 unique BB3s
-
-This means some building blocks may be systematically "good" or "bad" for binding WDR91 — independent of the full molecule. This is a strong signal we can exploit beyond fingerprints alone.
-
----
-
-## The Hard Part: The Domain Gap
-
-We train on DEL molecules → predict on a completely different commercial library.
-
-| | DEL training data | Validation library |
-|---|---|---|
-| Source | DNA-encoded library screen | Commercial vendor catalogue |
-| # molecules | 375,595 | ~370,000 |
-| Hit rate | 7.66% | 0.039% (145/370k) |
-| Chemical diversity | Built from 3-BB combinations | Far more diverse |
-
-The model must generalise from one type of chemistry to another. This is the main challenge — not the algorithm itself.
-
----
-
-## Project Structure
+## The modeling pipeline
 
 ```
-CS502_Project/
-├── data/
-│   ├── raw/               # WDR91.parquet (DEL screen data)
-│   └── processed/         # Cleaned / featurised versions
-├── notebooks/
-│   ├── 01_eda.ipynb       # Exploratory data analysis
-│   └── 03_imbalance_comparison.ipynb  # Strategy comparison
-├── src/
-│   ├── models/
-│   │   ├── imbalance_comparison.py    # CV framework + 6 strategies
-│   │   └── baseline.py
-│   ├── features/          # Fingerprint processing
-│   ├── evaluation/        # EF, AUPRC metrics
-│   └── utils/
-│       └── data_loader.py # Parquet → sparse matrix loader
-└── outputs/
-    ├── figures/           # Plots
-    └── predictions/       # CV results, final rankings
+WDR91.parquet
+     │
+     ├── Scalar columns (MW, ALOGP, BBs, LABEL)  ──→  EDA
+     │
+     └── Fingerprints (ECFP6, etc.)  ──→  Sparse CSR matrix
+                                                │
+                                         XGBoost classifier
+                                         (scale_pos_weight=12)
+                                                │
+                                    Library-aware 5-fold CV
+                                    (grouped by DEL library)
+                                                │
+                                         Rank by probability
+                                                │
+                                    EF@1%, AUPRC, AUROC
 ```
 
----
-
-## Where We Are Now
-
-- [x] Data loaded and understood
-- [x] Imbalance strategy comparison run (5-fold CV)
-- [ ] Feature engineering (combine fingerprints, add BB-level features)
-- [ ] Final model training on full DEL dataset
-- [ ] Prospective predictions on validation library
+**Why library-aware CV?** We split train/test by DEL library, not randomly. This means the model is tested on compounds from libraries it has never seen — much closer to the real challenge where we predict on a completely different chemical library.
 
 ---
 
-## Key Insight So Far
+## Notebooks (run in order)
 
-> Imbalance handling barely matters. The bigger wins will come from **better features** (especially building-block-level signals) and handling the **domain shift** between DEL chemistry and the commercial library.
+| Notebook | Purpose |
+|----------|---------|
+| [colab/01_eda.ipynb](notebooks/colab/01_eda.ipynb) | Explore data: distributions, hit rates by library and building block |
+| [colab/02_train_evaluate.ipynb](notebooks/colab/02_train_evaluate.ipynb) | Train XGBoost, 5-fold CV, evaluate EF@1%, save model |
+| [colab/03_predict.ipynb](notebooks/colab/03_predict.ipynb) | Load saved model, rank new compound library, export predictions |
+
+**Setup for Colab:**
+1. Upload `WDR91.parquet` to `My Drive/CS502/data/`
+2. Run notebooks in order — each cell has comments explaining what it does
+3. Model is automatically saved to `My Drive/CS502/models/` after training
+
+---
+
+## Why is class imbalance not the main problem?
+
+We tested 6 imbalance strategies (XGBoost default, scale_pos_weight, undersampling 1:3, undersampling 1:5, LightGBM, Random Forest balanced). The results were nearly identical — all within one standard deviation of each other.
+
+**The bigger challenges are:**
+1. **Domain shift** — training on DEL compounds (3-BB combinatorial), predicting on commercial drug-like compounds (very different chemical space)
+2. **Building block signal** — some BB combinations are enriched across the whole library; extracting BB-level features could improve results significantly
+3. **Fingerprint choice** — combining multiple fingerprints or using learned representations (graph neural nets) may outperform single ECFP6
